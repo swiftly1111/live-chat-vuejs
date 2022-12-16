@@ -1,20 +1,34 @@
 <template>
   <div class="container">
     <NavbarPage />
-    <ChatWindow :messages="messages" />
+     <ChatWindow @connectCable="connectCable" :messages="formattedMessages" ref="chatWindow" />
+    <NewChatForm @connectCable="connectCable" />
   </div>
 </template>
 
 <script>
 import NavbarPage from '../components/NavbarPage'
 import ChatWindow from '../components/ChatWindow'
+import NewChatForm from '../components/NewChatForm'
 import axios from 'axios'
+import ActionCable from 'actioncable'
+import { formatDistanceToNow } from 'date-fns'
+import { ja } from 'date-fns/locale'
 
 export default {
-  components: { NavbarPage, ChatWindow },
+  components: { NavbarPage, ChatWindow, NewChatForm },
   data () {
     return {
       messages: [],
+    }
+  },
+   computed: {
+    formattedMessages () {
+      if (!this.messages.length) { return [] }
+      return this.messages.map(message => {
+        let time = formatDistanceToNow(new Date(message.created_at), { locale: ja })
+        return { ...message, created_at: time }
+      })
     }
   },
   methods: {
@@ -35,10 +49,31 @@ export default {
         console.log(err)
       }
     },
+       connectCable (message) {
+      this.messageChannel.perform('receive', {
+        message: message,
+        email: window.localStorage.getItem('uid')
+      })
+    }
   },
   mounted() {
-    this.getMessages()
+    const cable = ActionCable.createConsumer('ws://localhost:3000/cable')
+    this.messageChannel = cable.subscriptions.create('RoomChannel', {
+      connected: () => {
+        this.getMessages().then(() => {
+          this.$refs.chatWindow.scrollToBottom()
+        })
+      },
+      received: () => {
+        this.getMessages().then(() => {
+          this.$refs.chatWindow.scrollToBottom()
+        })
+      }
+    })
   },
+  beforeUnmount () { 
+    this.messageChannel.unsubscribe()
+  }
 }
 </script>
 
